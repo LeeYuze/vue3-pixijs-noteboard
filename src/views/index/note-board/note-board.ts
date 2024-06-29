@@ -6,20 +6,23 @@ import {
   Rectangle,
   type ApplicationOptions,
 } from "pixi.js";
+import { ZoomHelper } from "./zoom";
 
 export class NoteBoard extends Application {
   private minZoom = 0.2;
   private maxZoom = 5;
 
   private OnLoadFn?: () => void;
-  private viewContainer: Element;
   private viewClientRect?: DOMRect;
+  private viewContainer: HTMLCanvasElement;
 
   private isTouchBlank: boolean = false;
   private mouseDownPoint: Point = new Point(0, 0);
   private rootContainerOriginalPos: Point = new Point(0, 0);
 
   private rootContainer = new Container();
+
+  private zoomHelper: ZoomHelper | undefined;
 
   AddChild = this.rootContainer.addChild.bind(this.rootContainer);
 
@@ -41,24 +44,17 @@ export class NoteBoard extends Application {
       });
     }
 
+    this.zoomHelper = new ZoomHelper({
+      minZoom: this.minZoom,
+      maxZoom: this.maxZoom,
+      container: this.viewContainer,
+      viewRect: this.viewClientRect,
+      zoomContainer: this.rootContainer,
+    });
+
     this.stage.eventMode = "static";
     this.rootContainer.eventMode = "static";
     this.stage.addChild(this.rootContainer);
-
-    (this.viewContainer as HTMLCanvasElement).addEventListener(
-      "wheel",
-      (e: WheelEvent) => {
-        if (!this.viewClientRect) return;
-        const { x, y } = this.viewClientRect;
-        const globalPos = new Point(e.clientX - x, e.clientY - y);
-        const delta = e.deltaY;
-        const oldZoom = this.GetZoom();
-        let newZoom = oldZoom * 0.999 ** delta;
-        if (newZoom > this.maxZoom) newZoom = this.maxZoom;
-        if (newZoom < this.minZoom) newZoom = this.minZoom;
-        this.ApplyZoom(oldZoom, newZoom, globalPos);
-      }
-    );
 
     this.stage.addEventListener("pointerdown", (e) => {
       this.rootContainerOriginalPos = CopyPoint(this.rootContainer.position);
@@ -91,31 +87,13 @@ export class NoteBoard extends Application {
     });
   }
 
-  GetZoom(): number {
-    // stage是宽高等比例缩放的，所以取x或者取y是一样的
-    return this.rootContainer.scale.x;
-  }
-  
-  ApplyZoom(oldZoom: number, newZoom: number, pointerGlobalPos: Point) {
-    const oldStageMatrix = this.rootContainer.localTransform.clone();
-    const oldStagePos = oldStageMatrix.applyInverse(pointerGlobalPos);
-    const dx = oldStagePos.x * oldZoom - oldStagePos.x * newZoom;
-    const dy = oldStagePos.y * oldZoom - oldStagePos.y * newZoom;
-
-    this.rootContainer.updateTransform({
-      x: this.rootContainer.position.x + dx,
-      y: this.rootContainer.position.y + dy,
-      scaleX: newZoom,
-      scaleY: newZoom,
-    });
-  }
-
   SetSize(width: number, height: number) {
     this.renderer.resize(width, height);
     this.stage.hitArea = new Rectangle(0, 0, width, height);
     this.viewClientRect = (
       this.viewContainer as HTMLCanvasElement
     ).getBoundingClientRect();
+    this.zoomHelper?.SetViewClientRect(this.viewClientRect);
   }
 
   OnLoad(fn: () => void) {
